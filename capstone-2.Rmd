@@ -1,0 +1,258 @@
+---
+title: "Wine Quality"
+author: "Piri Yebra"
+date: '2023-03-11'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r initial, include=FALSE}
+knitr::opts_chunk$set(warning  = FALSE)
+knitr::opts_chunk$set(message  = FALSE)
+
+```
+
+
+# Executive summary
+
+The purpose of this project is to predict the quality of wine based on eleven measurements. The data set was taken from a University of California at Irvine Machine Learning Repository (https://archive.ics.uci.edu/ml/index.php).
+
+I used several machine learning algorithms. The code was written in R, using the Caret Package, that conveniently includes many machine learning algorithms using a standardized nomenclature. RMSE was chosen as the metric to evaluate the models.  I also kept track of the model's Accuracy and used some graphs to better understand the models' performance. 
+
+Among the used algorithms, GLM (Generalized Linear Model) had the best performance, in both metrics. 
+
+# Preparation
+
+To start the project, libraries are installed and loaded. In this project, caret package is used.
+
+```{r libraries}
+# Install all needed libraries if not present
+if(!require(tidyverse)) install.packages("tidyverse") 
+if(!require(caret)) install.packages("caret") 
+if(!require(gam)) install.packages("gam") 
+
+# Loading all needed libraries
+library(tidyverse)
+library(caret)
+library(gam)
+```
+
+
+I chose a wine quality data set available at https://archive.ics.uci.edu/ml/datasets/Wine. 
+
+```{r load_dataset}
+# Retriving the Wine Quality dataset previously downloaded
+setwd("C:/Users/Piri Yebra/projects/ejemplo/final_project2")
+filename <- "winequality-red.csv"
+dat = read.csv(filename)
+```
+
+Data set is analyzed
+
+```{r analize_dataset}
+# Analizing dataset
+str(dat)
+```
+
+Data set has 12 variables. The first 11 are wine features. The last one, quality, should be the result of the previous features. Quality is in integer number.
+
+I divided the original data set in train and test set. Train set will be used to develop the prediction algorithm, and test set to predict quality.
+
+
+```{r train_test_set}
+# Dividing the original data set in train / test sets   
+set.seed(42, sample.kind = "Rounding")
+test_index <- createDataPartition(dat$quality,times=1, p=.1,  list = FALSE)
+wine_test <- dat[test_index, ]
+wine_train <- dat[-test_index, ]
+```
+
+Before trying machine learning models, I decided to use a metric to evaluate them. In this case, Root Mean Square Error (RMSE). The model that minimizes RMSE will be the best one. 
+
+```{r rmse}
+#RMSE function
+RMSE <- function(true_ratings = NULL, predicted_ratings = NULL) {
+  sqrt(mean((true_ratings - predicted_ratings)^2))
+}
+```
+
+In addition, I decided to keep track of the model's accuracy, as a reference. Accuracy is calculated as part of the Confusion Matrix.
+
+To have a visual understanding of the data, the following graphs were used:
+
+First, an histogram of quality distribution
+
+```{r quality_distribution}
+wine_train %>% ggplot(aes(x = quality)) + geom_histogram()
+```
+
+Almost all records within the train set have a quality of 5 or 6. In this set of data, quality goes from 3 to 8.
+
+Then, I decided to plot all variables against each other.
+
+```{r plot}
+plot(wine_train)
+```
+
+This graph shows that some variables are related. For example, density seems to be positively related to fixed acidity.And PH negatively related to fixed acidity. 
+
+The last row plots all variables against quality. No variable alone is clearly determining quality. In fact, some variables seem to have no effect in quality, since plots look like ovals, with no clear change in quality when the variable changes. For example, PH or fixed acidity. Neither of these variables alone seem to have an effect on quality.
+
+# Machine learning models
+
+As previously said, in this project I used the caret package. I used the train function with different methods. Then, the predict function to test the model in the test set. With this result, I calculated the Confusion Matrix, which provides several metrics such as: a Summary of the prediction vs reference quality. I used this table to build a model comparison graph at the end of the analysis. Other important metrics are accuracy, which I also compared among models. Sensitivity and Specificity is also automatically calculated.
+
+## 1. GLM - all variables
+
+The fist model to try is Generalized Linear Model (GLM) by using all 11 variables in the data set. 
+
+```{r GLM}
+# Generalized Linear Model - GLM algorith
+train <- train(quality ~ ., method= "glm", data = wine_train)
+y_hat <- round(predict(train, wine_test))
+confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))
+accuracy <- confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$overall[["Accuracy"]]
+RMSE <- RMSE(wine_test$quality, y_hat)
+results <- data.frame(model="GLM", RMSE=RMSE, Accuracy=accuracy)
+# Keep track of a table of reference vs prediction to later on build a comparative graph of all models
+t <- as.data.frame(confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$table)
+graphs <- data.frame(model="GLM", graph = t)
+results
+```
+
+In the results data frame I kept track of RMSE and Accuracy of all models
+
+## 2. GLM - 5 wine variables
+
+When I looked at the plot between the 11 variables and quality, I noticed that several variables seemed to have no relationship at all with quality since graphs looked like ovals. Therefore I decided to use GLM model with just 5 variables which visual relationship seemed somehow stronger: volatile acidity, chlorides, free sulfer dioxide, total sulfur dioxide and alhocol.
+
+```{r GLM_5_vars}
+# Generalized Linear Model - GLM algorith - just 5 variables
+train <- train(quality ~ volatile.acidity + chlorides + free.sulfur.dioxide + total.sulfur.dioxide + alcohol, method= "glm", data = wine_train)
+y_hat <- round(predict(train, wine_test))
+confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))
+accuracy <- confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$overall[["Accuracy"]]
+RMSE <- RMSE(wine_test$quality, y_hat)
+results <- results %>% add_row(model="GLM 5 vars", RMSE=RMSE, Accuracy=accuracy)
+t <- as.data.frame(confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$table)
+graphs <- graphs %>% add_row(model = "GLM 5 vars", graph.Prediction = t$Prediction, graph.Reference = t$Reference, graph.Freq = t$Freq)
+results
+```
+
+However, this model wasn't better than GLM using all variables.
+
+## 3. KNN - No tunning
+
+Next, I tried K-Nearest Neighbor Algorithm (KNN) with no tuning parameters.
+
+```{r KNN}
+# KNN algorithm - default
+train <- train(quality ~ ., method = "knn", data=wine_train)
+y_hat <- round(predict(train, wine_test))
+confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))
+accuracy <- confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$overall[["Accuracy"]]
+RMSE <- RMSE(wine_test$quality, y_hat)
+results <- results %>% add_row(model="KNN", RMSE=RMSE, Accuracy=accuracy)
+t <- as.data.frame(confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$table)
+graphs <- graphs %>% add_row(model = "KNN", graph.Prediction = t$Prediction, graph.Reference = t$Reference, graph.Freq = t$Freq)
+results
+```
+
+KNN have a worse RMSE than GLM
+
+## 4. KNN - tuned
+
+Next model was KNN but with tuning parameters.
+
+```{r KNN_T}
+# KNN algorithm - tuned
+train <- train(quality ~ ., method = "knn", data=wine_train, tuneGrid = data.frame(k=seq(9, 71,2)))
+ggplot(train, highlight = TRUE)
+train$bestTune
+y_hat <- round(predict(train, wine_test))
+confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))
+accuracy <- confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$overall[["Accuracy"]]
+RMSE <- RMSE(wine_test$quality, y_hat)
+results <- results %>% add_row(model="KNN_T", RMSE=RMSE, Accuracy=accuracy)
+t <- as.data.frame(confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$table)
+graphs <- graphs %>% add_row(model = "KNN_T", graph.Prediction = t$Prediction, graph.Reference = t$Reference, graph.Freq = t$Freq)
+results
+```
+
+As expected, when using tuning paramaters, KNN algorithm was better than KK without tuning parameters. But no better than GLM.
+
+# 5. Loess
+
+The last model used was Loess.
+
+```{r Loess}
+# Loess algorithm
+grid <- expand.grid(span = seq(0.15, 0.65, len = 10), degree = 1)
+train <- train(quality ~ ., 
+                     method = "gamLoess", 
+                     tuneGrid=grid,
+                     data = wine_train)
+ggplot(train, highlight = TRUE)
+train$bestTune
+y_hat <- round(predict(train, wine_test))
+confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))
+accuracy <- confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$overall[["Accuracy"]]
+RMSE <- RMSE(wine_test$quality, y_hat)
+results <- results %>% add_row(model="Loess", RMSE=RMSE, Accuracy=accuracy)
+t <- as.data.frame(confusionMatrix(data = as.factor(y_hat), reference = as.factor(wine_test$quality))$table)
+graphs <- graphs %>% add_row(model = "Loess", graph.Prediction = t$Prediction, graph.Reference = t$Reference, graph.Freq = t$Freq)
+results
+```
+
+Loess model performed better than KNN, but worse than GLM.
+
+# Results
+
+After trying 3 different machine learning algorithms plus two slight variations, the results were the following: 
+
+```{r results}
+#Analysis
+results
+```
+
+The model with the lowest RMSE and therefore the one selected for predicting wine quality is:
+
+```{r best_RMSE}
+results$model[which.min(results$RMSE)]
+```
+
+As stated earlier, I kept track of the model's accuracy. The model that performed best in accuracy is:
+
+```{r best_accuracy}
+results$model[which.max(results$Accuracy)]
+```
+
+Finally, to have a visual reference on how the models performed, I plotted Reference vs Prediction. The size of the dots mean the times of such prediction. A perfect model would predict quality equals to reference quality, which will show all dots over the line. 
+
+```{r prediction_graph}
+graphs %>% ggplot(aes(x=graph.Reference, y=graph.Prediction, size=graph.Freq, color=model)) + geom_jitter() + geom_abline(aes(intercept=0, slope=1)) + facet_wrap(vars(model))
+```
+
+Analyzing these graphs, models don't seem to perform very different. However, GLM shows more frequent predictions near the line than the other models. 5 models have some predictions far from the reference. 
+
+## Conclusion
+
+In this project, I had the opportunity to practice what has been taught in this course series. I used a wine data set provided in https://archive.ics.uci.edu/ml/datasets/Wine. I created a train set to try different algorithms and then make predictions on a test set. 
+
+I used RMSE to quantify the best algorithm. The best model would be the minimum RMSE. But I also wanted to take Accuracy into account for reference. Since wine quality is an integer, the predictions had to be as well integers. I decided to round the predictions in order to have an integer as a result.
+
+The algorithms used were: GLM, KNN, and Loess. For GLM, first I used all variables in the data set. Then I used just 5 variables that by looking at the plot, seemed to have more effect on quality. The model with all variables had slightly better results than the one that used just 5 variables. For KNN, I also tried two variations. The first with no parameters in the caret package. In the second KNN model, I used the parameters to tune the model. The second KNN model had better results than the first. Last, I used the Loess algorithm. This model had better results than KNN, but not as good as GLM.
+
+GLM using all 11 variables had the least RMSE. Therefore, this is the best model among the ones used. It also had the best  accuracy. To complement with a graphical view of this  analysis, I decided to make a graph that shows prediction vs reference data. Although there is a significant high frequency of good predictions (reference equals or near predicted data), there are also several predictions off reference data.
+
+Although RMSE of the best model is 0.6915, accuracy is not ideal 0.5776. For future work, a better model would improve accuracy.
+
+## References
+
+1. Forina, M. et al, PARVUS - An Extendible Package for Data Exploration, Classification and Correlation.
+Institute of Pharmaceutical and Food Analysis and Technologies, Via Brigata Salerno,
+16147 Genoa, Italy. https://archive.ics.uci.edu/ml/index.php
+
+2. Irizarry, R., (2019). Introduction to Data Science. http://rafalab.dfci.harvard.edu/dsbook/
+
